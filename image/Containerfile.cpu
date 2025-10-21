@@ -1,0 +1,33 @@
+#FROM public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.10.2 
+FROM localhost/vllm-cpu-env:latest
+ARG ENTRYPOINT_PATH=image/entrypoint-vllm.sh
+# Install basic development tools
+RUN apt-get update && apt-get install -y \
+    curl jq bsdmainutils bc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install additional dependencies
+RUN pip3 install --no-cache-dir \
+    transformers \
+    accelerate \
+    safetensors
+
+# Create non-root user for security
+RUN useradd -m -u 2000 vllm
+WORKDIR /app
+RUN chown vllm:vllm /app
+
+# Create directories for models and benchmarks
+RUN mkdir -p /data/benchmarks && \
+   chmod 777 /data/benchmarks
+
+# Switch to non-root user
+USER vllm
+
+# Make our entrypoint script executable
+
+COPY --chown=vllm:vllm ${ENTRYPOINT_PATH} .
+RUN chmod +x entrypoint-vllm.sh
+
+ENTRYPOINT ["./entrypoint-vllm.sh"]
+
