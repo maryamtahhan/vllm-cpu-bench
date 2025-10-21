@@ -316,7 +316,7 @@ case $MODE in
     SERVE_LOG="$BENCHMARK_DIR/server.log"
     BENCH_LOG="$BENCHMARK_DIR/serve_benchmark.log"
 
-    # 1️⃣ Launch the vLLM server
+    # Launch the vLLM server
     echo "Launching vLLM server on port $PORT..."
     vllm serve \
       --model "$MODEL" \
@@ -324,7 +324,7 @@ case $MODE in
       $EXTRA_ARGS > "$SERVE_LOG" 2>&1 &
     SERVER_PID=$!
 
-    # 2️⃣ Wait for startup
+    # Wait for startup
     echo "Waiting for vLLM server to finish loading..."
     until grep -q "Application startup complete" "$SERVE_LOG" 2>/dev/null; do
       sleep 2
@@ -332,31 +332,32 @@ case $MODE in
     done
     echo -e "\n✅ Server is ready!"
 
-    # 3️⃣ Run the benchmark
+    # Run the benchmark
     echo "Running serve benchmark..."
     START_TIME=$(date +%s)
     vllm bench serve \
-    --backend vllm \
-    --model "$MODEL" \
-    --host localhost \
-    --port "$PORT" \
-    --endpoint /v1/chat/completions \
-    --dataset-name random \
-    --random-input-len 512 \
-    --random-output-len 256
-    --max-concurrency "$NUM_CONCURRENT" \
-    --num-prompts "$NUM_PROMPTS" \
-    --request-rate inf \
-    --goodput "tpot:100 ttft:2000" \
-    --result-dir "$BENCHMARK_DIR" \
-    --result-filename serve.json \
-    --save-result \
+      --backend vllm \
+      --model "$MODEL" \
+      --host localhost \
+      --port "$PORT" \
+      --endpoint /v1/completions \
+      --dataset-name random \
+      --random-input-len 512 \
+      --random-output-len 256 \
+      --max-concurrency "$NUM_CONCURRENT" \
+      --num-prompts "$NUM_PROMPTS" \
+      --request-rate inf \
+      --goodput tpot:100 \
+      --goodput ttft:2000 \
+      --result-dir "$BENCHMARK_DIR" \
+      --result-filename serve.json \
+      --save-result \
     2>&1 | tee "$BENCH_LOG"
 
     END_TIME=$(date +%s)
     TOTAL_TIME=$((END_TIME - START_TIME))
 
-    # 4️⃣ Stop the server
+    # Stop the server
     echo "Stopping vLLM server..."
     kill "$SERVER_PID" >/dev/null 2>&1
 
@@ -365,7 +366,7 @@ case $MODE in
     echo " Results saved in: $BENCHMARK_DIR"
     echo "==================================="
 
-    # 5️⃣ Summarize results
+    # Summarize results
     case "$BENCHMARK_SUMMARY_MODE" in
       "table") print_benchmark_summary_table "$BENCHMARK_DIR" ;;
       "graph") print_benchmark_summary_graph "$BENCHMARK_DIR" ;;
@@ -373,8 +374,6 @@ case $MODE in
       *)       echo "Unknown BENCHMARK_SUMMARY_MODE: $BENCHMARK_SUMMARY_MODE" ;;
     esac
     ;;
-
-
   *)
     echo "Unknown mode: $MODE"
     echo "Please use 'serve', 'benchmark-throughput', or 'benchmark-latency'"
