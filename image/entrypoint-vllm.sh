@@ -370,13 +370,6 @@ case $MODE in
     echo " Results saved in: $BENCHMARK_DIR"
     echo "==================================="
 
-    # Summarize results
-    case "$BENCHMARK_SUMMARY_MODE" in
-      "table") print_benchmark_summary_table "$BENCHMARK_DIR" ;;
-      "graph") print_benchmark_summary_graph "$BENCHMARK_DIR" ;;
-      "none")  echo "Benchmark summary display disabled." ;;
-      *)       echo "Unknown BENCHMARK_SUMMARY_MODE: $BENCHMARK_SUMMARY_MODE" ;;
-    esac
     ;;
   *)
     echo "Error: Unknown mode: $MODE"
