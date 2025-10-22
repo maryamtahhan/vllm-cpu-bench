@@ -20,6 +20,14 @@ EXTRA_ARGS=${EXTRA_ARGS:-""}
 # Log file location
 LOG_PATH="/tmp/vllm.log"
 
+# System-specific parallelism tuning (Sapphire Rapids dual-socket, 104 physical cores total)
+TP=${TP:-2}  # tensor parallelism = number of NUMA nodes
+OMP_NUM_THREADS=${OMP_NUM_THREADS:-26}  # threads per shard (52 physical cores / 2)
+VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-"0-25|52-77"}  # one shard per NUMA node
+VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-30}  # % of memory for KV cache
+SWAP_SPACE=${SWAP_SPACE:-8}  # safe small swap-space to avoid overcommit
+GOODPUT_PARAMS=${GOODPUT_PARAMS:-"--goodput tpot:100 --goodput ttft:1000"}  # adjustable goodput settings
+
 # Validate required environment variables
 if [[ -z "$MODEL" ]]; then
   echo "Error: MODEL environment variable is not set."
@@ -349,8 +357,7 @@ case $MODE in
       --max-concurrency "$NUM_CONCURRENT" \
       --num-prompts "$NUM_PROMPTS" \
       --request-rate inf \
-      --goodput tpot:100 \
-      --goodput ttft:2000 \
+      $GOODPUT_PARAMS \
       --seed 2048 \
       --ignore-eos \
       --result-dir "$BENCHMARK_DIR" \
