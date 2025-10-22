@@ -1,4 +1,3 @@
-
 FROM localhost/vllm-cpu-env:latest
 
 # Define the path to the entrypoint script
@@ -8,6 +7,11 @@ ARG ENTRYPOINT_PATH=image/entrypoint-vllm.sh
 RUN apt-get update && apt-get install -y \
     curl jq bsdmainutils bc gnuplot \
     && rm -rf /var/lib/apt/lists/*
+
+# Install TCMalloc library
+RUN apt-get update && apt-get install -y libtcmalloc-minimal4 && \
+    find / -name *libtcmalloc* && \
+    echo "export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4:\$LD_PRELOAD" >> /etc/profile
 
 # Install additional dependencies
 RUN pip3 install --no-cache-dir \
