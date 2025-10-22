@@ -1,19 +1,25 @@
-#FROM public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.10.2 
+
 FROM localhost/vllm-cpu-env:latest
+
+# Define the path to the entrypoint script
 ARG ENTRYPOINT_PATH=image/entrypoint-vllm.sh
+
 # Install basic development tools
 RUN apt-get update && apt-get install -y \
-    curl jq bsdmainutils bc \
+    curl jq bsdmainutils bc gnuplot \
     && rm -rf /var/lib/apt/lists/*
 
 # Install additional dependencies
 RUN pip3 install --no-cache-dir \
     transformers \
     accelerate \
-    safetensors
+    safetensors \
+    termplotlib
 
 # Create non-root user for security
 RUN useradd -m -u 2000 vllm
+
+# Set the working directory
 WORKDIR /app
 RUN chown vllm:vllm /app
 
@@ -24,10 +30,14 @@ RUN mkdir -p /data/benchmarks && \
 # Switch to non-root user
 USER vllm
 
-# Make our entrypoint script executable
-
+# Copy the entrypoint script and make it executable
 COPY --chown=vllm:vllm ${ENTRYPOINT_PATH} .
+
+# Verify entrypoint script
+RUN if [ ! -f "entrypoint-vllm.sh" ]; then echo "Entrypoint script not found!"; exit 1; fi
+
 RUN chmod +x entrypoint-vllm.sh
 
+# Set the entrypoint
 ENTRYPOINT ["./entrypoint-vllm.sh"]
 

@@ -1,0 +1,43 @@
+{
+  "project": {
+    "name": "vLLM CPU Benchmarks",
+    "description": "Tools to build and benchmark vLLM CPU-based container images.",
+    "language": "multi",
+    "primary_language": "bash",
+    "dependencies": [
+      "Docker",
+      "Podman",
+      "Python 3.8+",
+      "huggingface_hub",
+      "transformers",
+      "accelerate",
+      "safetensors"
+    ]
+  },
+  "files": [
+    {
+      "path": "Readme.md",
+      "description": "Documentation for building, downloading models, and running benchmarks."
+    },
+    {
+      "path": "Makefile",
+      "description": "Makefile for building, pushing, and cleaning container images."
+    },
+    {
+      "path": "scripts/download_model.py",
+      "description": "Python script to download Hugging Face models for offline use."
+    },
+    {
+      "path": "scripts/build_vllm_cpu_image.sh",
+      "description": "Bash script to build the vLLM CPU container image."
+    },
+    {
+      "path": "image/entrypoint-vllm.sh",
+      "description": "Entrypoint script for running vLLM in different modes (serve, benchmark)."
+    },
+    {
+      "path": "image/Containerfile.cpu",
+      "description": "Dockerfile for building the vLLM CPU container image."
+    }
+  ]
+}

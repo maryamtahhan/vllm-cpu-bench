@@ -20,6 +20,12 @@ EXTRA_ARGS=${EXTRA_ARGS:-""}
 # Log file location
 LOG_PATH="/tmp/vllm.log"
 
+# Validate required environment variables
+if [[ -z "$MODEL" ]]; then
+  echo "Error: MODEL environment variable is not set."
+  exit 1
+fi
+
 summarize_logs() {
   local logfile="$1"
   echo -e "\n===== Startup Summary ====="
@@ -375,8 +381,8 @@ case $MODE in
     esac
     ;;
   *)
-    echo "Unknown mode: $MODE"
-    echo "Please use 'serve', 'benchmark-throughput', or 'benchmark-latency'"
+    echo "Error: Unknown mode: $MODE"
+    echo "Supported modes: serve, benchmark-throughput, benchmark-latency, benchmark-serve"
     exit 1
     ;;
 esac
