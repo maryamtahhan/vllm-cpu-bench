@@ -324,27 +324,15 @@ case $MODE in
 
     # Launch the vLLM server
     echo "Launching vLLM server on port $PORT..."
-    VLLM_USE_V1=1 VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-    VLLM_ENGINE_ITERATION_TIMEOUT_S=600 \
-    VLLM_CPU_KVCACHE_SPACE=80 OMP_NUM_THREADS=16 \
-    VLLM_CPU_OMP_THREADS_BIND="0-15|16-31|32-47|48-63" \
     vllm serve \
       --model "$MODEL" \
       --port "$PORT" \
-      --device cpu -O3 \
-      -tp=4 \
-      --distributed-executor-backend mp \
-      --enable_chunked_prefill=True \
-      $EXTRA_ARGS > "$SERVE_LOG" 2>&1 &
-    SERVER_PID=$!
+      $EXTRA_ARGS 2>&1 | tee "$SERVE_LOG" &
 
     # Wait for startup
     echo "Waiting for vLLM server to finish loading..."
-    until grep -q "Application startup complete" "$SERVE_LOG" 2>/dev/null; do
-      sleep 2
-      echo -n "."
-    done
-    echo -e "\n✅ Server is ready!"
+    ( tail -f "$SERVE_LOG" & ) | grep -m 1 "Application startup complete" && kill $! 2>/dev/null
+    echo -e "\n Server is ready!"
 
     # Run the benchmark
     echo "Running serve benchmark..."
