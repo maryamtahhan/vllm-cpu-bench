@@ -6,7 +6,7 @@ MODEL=${MODEL:-"Qwen/Qwen1.5-MoE-A2.7B-Chat"}
 PORT=${PORT:-8000}
 
 # Benchmark configuration with defaults
-INPUT_LEN=${INPUT_LEN:-512}
+INPUT_LEN=${INPUT_LEN:-256}
 OUTPUT_LEN=${OUTPUT_LEN:-256}
 NUM_PROMPTS=${NUM_PROMPTS:-1000}
 NUM_ROUNDS=${NUM_ROUNDS:-3}
@@ -324,9 +324,17 @@ case $MODE in
 
     # Launch the vLLM server
     echo "Launching vLLM server on port $PORT..."
+    VLLM_USE_V1=1 VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    VLLM_ENGINE_ITERATION_TIMEOUT_S=600 \
+    VLLM_CPU_KVCACHE_SPACE=80 OMP_NUM_THREADS=16 \
+    VLLM_CPU_OMP_THREADS_BIND="0-15|16-31|32-47|48-63" \
     vllm serve \
       --model "$MODEL" \
       --port "$PORT" \
+      --device cpu -O3 \
+      -tp=4 \
+      --distributed-executor-backend mp \
+      --enable_chunked_prefill=True \
       $EXTRA_ARGS > "$SERVE_LOG" 2>&1 &
     SERVER_PID=$!
 
@@ -344,17 +352,19 @@ case $MODE in
     vllm bench serve \
       --backend vllm \
       --model "$MODEL" \
+      --tokenizer "$MODEL" \
       --host localhost \
       --port "$PORT" \
-      --endpoint /v1/completions \
       --dataset-name random \
-      --random-input-len 512 \
-      --random-output-len 256 \
+      --random-input-len "$INPUT_LEN" \
+      --random-output-len "$OUTPUT_LEN" \
       --max-concurrency "$NUM_CONCURRENT" \
       --num-prompts "$NUM_PROMPTS" \
       --request-rate inf \
       --goodput tpot:100 \
       --goodput ttft:2000 \
+      --seed 2048 \
+      --ignore-eos \
       --result-dir "$BENCHMARK_DIR" \
       --result-filename serve.json \
       --save-result \
