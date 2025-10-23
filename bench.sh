@@ -70,40 +70,40 @@ extract_metrics_from_log() {
   P99_ITL=${P99_ITL:-0}
 }
 
-extract_results() {
-  local LOG_DIR=$1
-  local OUTPUT_CSV=$2
+# extract_results() {
+#   local LOG_DIR=$1
+#   local OUTPUT_CSV=$2
 
-  echo "📂 Extracting results from logs in ${LOG_DIR}..."
-  echo "input_len,output_len,num_prompts,num_concurrent,tokens_per_sec,output_tokens_per_sec,mean_ttft,mean_tpot,median_ttft,p99_ttft,median_tpot,p99_tpot,mean_itl,median_itl,p99_itl" > "$OUTPUT_CSV"
+#   echo "📂 Extracting results from logs in ${LOG_DIR}..."
+#   echo "input_len,output_len,num_prompts,num_concurrent,tokens_per_sec,output_tokens_per_sec,mean_ttft,mean_tpot,median_ttft,p99_ttft,median_tpot,p99_tpot,mean_itl,median_itl,p99_itl" > "$OUTPUT_CSV"
 
-  for LOG_FILE in "${LOG_DIR}"/*.log; do
-    [[ -f "$LOG_FILE" ]] || continue
+#   for LOG_FILE in "${LOG_DIR}"/*.log; do
+#     [[ -f "$LOG_FILE" ]] || continue
 
-    # Extract parameters from the log filename
-    FILENAME=$(basename "$LOG_FILE")
-    IFS='_' read -r _ input_len output_len num_prompts <<< "${FILENAME%.log}"
+#     # Extract parameters from the log filename
+#     FILENAME=$(basename "$LOG_FILE")
+#     IFS='_' read -r _ input_len output_len num_prompts <<< "${FILENAME%.log}"
 
-    # Extract metrics from the log file
-    extract_metrics_from_log "$LOG_FILE"
+#     # Extract metrics from the log file
+#     extract_metrics_from_log "$LOG_FILE"
 
-    # Extract num_concurrent from the log file
-    num_concurrent=$(grep "Maximum request concurrency" "$LOG_FILE" | awk '{print $NF}')
-    num_concurrent=${num_concurrent:-N/A}
+#     # Extract num_concurrent from the log file
+#     num_concurrent=$(grep "Maximum request concurrency" "$LOG_FILE" | awk '{print $NF}')
+#     num_concurrent=${num_concurrent:-N/A}
 
-    echo "${input_len},${output_len},${num_prompts},${num_concurrent},${TOKS_PER_SEC},${OUT_TOKS_PER_SEC},${MEAN_TTFT},${MEAN_TPOT},${MEDIAN_TTFT},${P99_TTFT},${MEDIAN_TPOT},${P99_TPOT},${MEAN_ITL},${MEDIAN_ITL},${P99_ITL}" >> "$OUTPUT_CSV"
-  done
+#     echo "${input_len},${output_len},${num_prompts},${num_concurrent},${TOKS_PER_SEC},${OUT_TOKS_PER_SEC},${MEAN_TTFT},${MEAN_TPOT},${MEDIAN_TTFT},${P99_TTFT},${MEDIAN_TPOT},${P99_TPOT},${MEAN_ITL},${MEDIAN_ITL},${P99_ITL}" >> "$OUTPUT_CSV"
+#   done
 
-  echo "✅ Results extracted to: ${OUTPUT_CSV}"
-}
+#   echo "✅ Results extracted to: ${OUTPUT_CSV}"
+# }
 
-# Check for the extract option
-if [[ "$1" == "--extract" ]]; then
-  LOG_DIR=${2:-"${RESULTS_ROOT}"}
-  OUTPUT_CSV=${3:-"${LOG_DIR}/extracted_results.csv"}
-  extract_results "$LOG_DIR" "$OUTPUT_CSV"
-  exit 0
-fi
+# # Check for the extract option
+# if [[ "$1" == "--extract" ]]; then
+#   LOG_DIR=${2:-"${RESULTS_ROOT}"}
+#   OUTPUT_CSV=${3:-"${LOG_DIR}/extracted_results.csv"}
+#   extract_results "$LOG_DIR" "$OUTPUT_CSV"
+#   exit 0
+# fi
 
 # ---------- RUN SWEEP ----------
 total_runs=$(( ${#INPUT_LENS[@]} * ${#OUTPUT_LENS[@]} * ${#NUM_PROMPTS_LIST[@]} ))
