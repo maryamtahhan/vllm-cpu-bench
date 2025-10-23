@@ -126,17 +126,28 @@ for input_len in "${INPUT_LENS[@]}"; do
         -e "OUTPUT_LEN=${output_len}" \
         -e "NUM_PROMPTS=${num_prompts}" \
         -e "NUM_CONCURRENT=${num_concurrent}" \
-        quay.io/mtahhan/vllm:cpu > "${LOG_FILE}" 2>&1); then
+        quay.io/mtahhan/vllm:cpu 2>>"${LOG_FILE}"); then
         echo "❌ Failed to start container for input=${input_len}, output=${output_len}, prompts=${num_prompts}" | tee -a "$LOG_FILE"
         echo "${input_len},${output_len},${num_prompts},${num_concurrent},0,0,0,0,0,0,0,0,0,0,0" >> "$RESULTS_CSV"
         continue
-      fi
+        fi
 
-      echo "🕒 Waiting for container ${CONTAINER_ID:0:12} to finish..."
-      podman wait "$CONTAINER_ID" >/dev/null || true
+        echo "🕒 Streaming logs for container ${CONTAINER_ID:0:12}..."
 
-      podman logs "$CONTAINER_ID" > "$LOG_FILE" 2>&1 || true
-      podman rm "$CONTAINER_ID" >/dev/null 2>&1 || true
+        # Stream logs to the file in the background
+        podman logs -f "$CONTAINER_ID" > "$LOG_FILE" 2>&1 &
+        LOG_PID=$!
+
+        # Wait for the container to finish
+        podman wait "$CONTAINER_ID" >/dev/null || true
+
+        # Stop the log stream
+        kill "$LOG_PID" >/dev/null 2>&1 || true
+        wait "$LOG_PID" 2>/dev/null || true
+
+        # Cleanup
+        podman rm "$CONTAINER_ID" >/dev/null 2>&1 || true
+        echo "🛑 Container ${CONTAINER_ID:0:12} finished."
 
       # ---------- EXTRACT RESULTS ----------
       echo "📊 Extracting results..."
