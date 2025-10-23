@@ -1,0 +1,29 @@
+# Logs
+*.log
+/tmp/
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Docker files
+*.tar
+*.img
+
+# Build artifacts
+build/
+dist/
+
+# IDE specific files
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+vllm_source/
