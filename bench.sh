@@ -40,7 +40,7 @@ NUM_CONCURRENT_LIST=(1 8 32 64 128)
 
 # ---------- RESULTS CSV ----------
 RESULTS_CSV="${RESULTS_ROOT}/benchmark_results.csv"
-echo "input_len,output_len,num_prompts,num_concurrent,tokens_per_sec,output_tokens_per_sec,mean_ttft,mean_tpot" > "$RESULTS_CSV"
+echo "input_len,output_len,num_prompts,num_concurrent,tokens_per_sec,output_tokens_per_sec,mean_ttft,mean_tpot,median_ttft,p99_ttft,median_tpot,p99_tpot,mean_itl,median_itl,p99_itl" > "$RESULTS_CSV"
 
 # ---------- RUN SWEEP ----------
 total_runs=$(( ${#INPUT_LENS[@]} * ${#OUTPUT_LENS[@]} * ${#NUM_PROMPTS_LIST[@]} ))
@@ -65,7 +65,7 @@ for input_len in "${INPUT_LENS[@]}"; do
         -e "NUM_CONCURRENT=${num_concurrent}" \
         quay.io/mtahhan/vllm:cpu 2>>"$LOG_FILE"); then
         echo "❌ Failed to start container for input=${input_len}, output=${output_len}, prompts=${num_prompts}" | tee -a "$LOG_FILE"
-        echo "${input_len},${output_len},${num_prompts},${num_concurrent},0,0,0,0" >> "$RESULTS_CSV"
+        echo "${input_len},${output_len},${num_prompts},${num_concurrent},0,0,0,0,0,0,0,0,0,0,0" >> "$RESULTS_CSV"
         continue
       fi
 
@@ -80,14 +80,28 @@ for input_len in "${INPUT_LENS[@]}"; do
       TOKS_PER_SEC=$(grep "Total Token throughput" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
       OUT_TOKS_PER_SEC=$(grep "Output token throughput" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
       MEAN_TTFT=$(grep "Mean TTFT" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      MEDIAN_TTFT=$(grep "Median TTFT" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      P99_TTFT=$(grep "P99 TTFT" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
       MEAN_TPOT=$(grep "Mean TPOT" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      MEDIAN_TPOT=$(grep "Median TPOT" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      P99_TPOT=$(grep "P99 TPOT" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      MEAN_ITL=$(grep "Mean ITL" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      MEDIAN_ITL=$(grep "Median ITL" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
+      P99_ITL=$(grep "P99 ITL" "$LOG_FILE" | awk '{print $NF}' | tail -n1)
 
       TOKS_PER_SEC=${TOKS_PER_SEC:-0}
       OUT_TOKS_PER_SEC=${OUT_TOKS_PER_SEC:-0}
       MEAN_TTFT=${MEAN_TTFT:-0}
+      MEDIAN_TTFT=${MEDIAN_TTFT:-0}
+      P99_TTFT=${P99_TTFT:-0}
       MEAN_TPOT=${MEAN_TPOT:-0}
+      MEDIAN_TPOT=${MEDIAN_TPOT:-0}
+      P99_TPOT=${P99_TPOT:-0}
+      MEAN_ITL=${MEAN_ITL:-0}
+      MEDIAN_ITL=${MEDIAN_ITL:-0}
+      P99_ITL=${P99_ITL:-0}
 
-      echo "${input_len},${output_len},${num_prompts},${num_concurrent},${TOKS_PER_SEC},${OUT_TOKS_PER_SEC},${MEAN_TTFT},${MEAN_TPOT}" >> "$RESULTS_CSV"
+      echo "${input_len},${output_len},${num_prompts},${num_concurrent},${TOKS_PER_SEC},${OUT_TOKS_PER_SEC},${MEAN_TTFT},${MEAN_TPOT},${MEDIAN_TTFT},${P99_TTFT},${MEDIAN_TPOT},${P99_TPOT},${MEAN_ITL},${MEDIAN_ITL},${P99_ITL}" >> "$RESULTS_CSV"
       echo "✅ [$(date +'%H:%M:%S')] Completed: input=${input_len}, output=${output_len}, prompts=${num_prompts}, tokens/s=${TOKS_PER_SEC}, Output-token/s=${OUT_TOKS_PER_SEC}"
     done
   done
