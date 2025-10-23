@@ -126,7 +126,7 @@ for input_len in "${INPUT_LENS[@]}"; do
         -e "OUTPUT_LEN=${output_len}" \
         -e "NUM_PROMPTS=${num_prompts}" \
         -e "NUM_CONCURRENT=${num_concurrent}" \
-        quay.io/mtahhan/vllm:cpu 2>>"$LOG_FILE"); then
+        quay.io/mtahhan/vllm:cpu > "${LOG_FILE}" 2>&1); then
         echo "❌ Failed to start container for input=${input_len}, output=${output_len}, prompts=${num_prompts}" | tee -a "$LOG_FILE"
         echo "${input_len},${output_len},${num_prompts},${num_concurrent},0,0,0,0,0,0,0,0,0,0,0" >> "$RESULTS_CSV"
         continue
