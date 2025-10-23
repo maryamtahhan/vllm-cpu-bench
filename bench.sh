@@ -29,7 +29,7 @@ VLLM_PARAMS=(
   "-e" "GOODPUT_PARAMS=--goodput tpot:100 --goodput ttft:1000"
   "-e" "EXTRA_ARGS=--dtype=bfloat16 --swap-space 8 --no-enable-log-requests --enable_chunked_prefill --distributed-executor-backend mp -tp=2"
   "-v" "/home/mtahhan/models/Llama-3.1-8B-Instruct:${MODEL_PATH}"
-  "-v" "${RESULTS_ROOT}:/data/benchmarks"
+  "-v" "${RESULTS_ROOT}:${RESULTS_ROOT}"
 )
 
 # ---------- SWEEP PARAMETERS ----------
