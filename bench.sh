@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MODEL_PATH="/models--meta-llama--Llama-3.1-8B-Instruct"
-HOST_MODEL_PATH=${HOST_MODEL_PATH:-"/home/mtahhan/models/Llama-3.1-8B-Instruct"}
+HOST_MODEL_PATH=${HOST_MODEL_PATH:-"/var/models/Llama-3.1-8B-Instruct"}
 RESULTS_ROOT=${RESULTS_ROOT:-"/data/benchmarks/sweep_$(date +%Y%m%d_%H%M%S)"}
 mkdir -p "$RESULTS_ROOT"
 
@@ -60,8 +60,8 @@ VLLM_CONTAINER_PARAMS=(
 # ---------- SWEEP PARAMETERS ----------
 INPUT_LENS=(256 1024)
 OUTPUT_LENS=(256 1024 2048)
-NUM_PROMPTS_LIST=(1 8 32 64 128)
-NUM_CONCURRENT_LIST=(1 8 32 64 128)
+NUM_PROMPTS_LIST=(1 8 24 32 36 48 64 96 128)
+NUM_CONCURRENT_LIST=(1 8 24 32 36 48 64 96 128)
 
 # ---------- RESULTS CSV ----------
 RESULTS_CSV="${RESULTS_ROOT}/benchmark_results.csv"
