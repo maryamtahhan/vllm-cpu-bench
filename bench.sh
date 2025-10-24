@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MODEL_PATH="/models--meta-llama--Llama-3.1-8B-Instruct"
-HOST_MODEL_PATH=${HOST_MODEL_PATH:-"/home/mtahhan/models/Llama-3.1-8B-Instruct"}
+HOST_MODEL_PATH=${HOST_MODEL_PATH:-"/var/models/Llama-3.1-8B-Instruct"}
 RESULTS_ROOT=${RESULTS_ROOT:-"/data/benchmarks/sweep_$(date +%Y%m%d_%H%M%S)"}
 mkdir -p "$RESULTS_ROOT"
 
@@ -24,7 +24,7 @@ CPUS=${CPUS:-"0-103"}
 TP=${TP:-2}  # tensor parallelism = number of NUMA nodes
 OMP_NUM_THREADS=${OMP_NUM_THREADS:-26}  # threads per shard (52 physical cores / 2)
 VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-"0-25|52-77"}  # one shard per NUMA node
-VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-30}  # % of memory for KV cache
+VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-40}  # % of memory for KV cache
 SWAP_SPACE=${SWAP_SPACE:-8}  # safe small swap-space to avoid overcommit
 GOODPUT_PARAMS=${GOODPUT_PARAMS:-"--goodput tpot:100 --goodput ttft:1000"}  # adjustable goodput settings
 EXTRA_ARGS=${EXTRA_ARGS:-"--dtype=bfloat16 --swap-space ${SWAP_SPACE} --no-enable-log-requests --enable_chunked_prefill --distributed-executor-backend mp -tp=${TP}"}
@@ -60,8 +60,8 @@ VLLM_CONTAINER_PARAMS=(
 # ---------- SWEEP PARAMETERS ----------
 INPUT_LENS=(256 1024)
 OUTPUT_LENS=(256 1024 2048)
-NUM_PROMPTS_LIST=(1 8 32 64 128)
-NUM_CONCURRENT_LIST=(1 8 32 64 128)
+NUM_PROMPTS_LIST=(1 8 16 24 32 36 48 64 96 128)
+NUM_CONCURRENT_LIST=(1 8 16 24 32 36 48 64 96 128)
 
 # ---------- RESULTS CSV ----------
 RESULTS_CSV="${RESULTS_ROOT}/benchmark_results.csv"
