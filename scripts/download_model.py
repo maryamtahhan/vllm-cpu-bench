@@ -13,7 +13,7 @@ import platform
 from huggingface_hub import snapshot_download
 
 # Ensure Python version is 3.8+
-if platform.python_version_tuple() < ('3', '8'):
+if tuple(map(int, platform.python_version_tuple())) < (3, 8):
     print("❌ Python 3.8 or higher is required.")
     sys.exit(1)
 
@@ -28,7 +28,7 @@ def main():
 
     # Local directory is based on the last part of the repo_id
     model_name = model_id.split("/")[-1]
-    local_dir = os.path.join("/tmp/models", model_name)
+    local_dir = os.path.join("/var/models", model_name)
 
     # Optional: read token from environment (if gated/private)
     hf_token = os.getenv("HF_TOKEN", None)
@@ -55,6 +55,7 @@ def main():
 
     print("\nYou can now run vLLM with:")
     print(f"python -m vllm.entrypoints.openai.api_server --model {local_dir}")
+    # print(f"python -m vllm.entrypoints.openai.api_server --model {local_dir}")
 
 if __name__ == "__main__":
     main()

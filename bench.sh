@@ -1,8 +1,33 @@
 #!/bin/bash
 
 MODEL_PATH="/models--meta-llama--Llama-3.1-8B-Instruct"
-RESULTS_ROOT="/data/benchmarks/sweep_$(date +%Y%m%d_%H%M%S)"
+HOST_MODEL_PATH=${HOST_MODEL_PATH:-"/home/mtahhan/models/Llama-3.1-8B-Instruct"}
+RESULTS_ROOT=${RESULTS_ROOT:-"/data/benchmarks/sweep_$(date +%Y%m%d_%H%M%S)"}
 mkdir -p "$RESULTS_ROOT"
+
+# Base configuration with defaults
+MODE=${MODE:-"benchmark-serve"} # benchmark-serve or serve or benchmark-throughput or benchmark-latency
+MODEL=${MODEL:-"${MODEL_PATH}"}
+PORT=${PORT:-8000}
+
+# Benchmark configuration with defaults
+INPUT_LEN=${INPUT_LEN:-256}
+OUTPUT_LEN=${OUTPUT_LEN:-256}
+NUM_PROMPTS=${NUM_PROMPTS:-1000}
+NUM_ROUNDS=${NUM_ROUNDS:-3}
+MAX_BATCH_TOKENS=${MAX_BATCH_TOKENS:-8192}
+NUM_CONCURRENT=${NUM_CONCURRENT:-8}
+BENCHMARK_SUMMARY_MODE=${BENCHMARK_SUMMARY_MODE:-"table"}  # Options: table, graph, none
+
+# System-specific parallelism tuning (Default Sapphire Rapids dual-socket, 104 physical cores total)
+CPUS=${CPUS:-"0-103"}
+TP=${TP:-2}  # tensor parallelism = number of NUMA nodes
+OMP_NUM_THREADS=${OMP_NUM_THREADS:-26}  # threads per shard (52 physical cores / 2)
+VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-"0-25|52-77"}  # one shard per NUMA node
+VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-30}  # % of memory for KV cache
+SWAP_SPACE=${SWAP_SPACE:-8}  # safe small swap-space to avoid overcommit
+GOODPUT_PARAMS=${GOODPUT_PARAMS:-"--goodput tpot:100 --goodput ttft:1000"}  # adjustable goodput settings
+EXTRA_ARGS=${EXTRA_ARGS:-"--dtype=bfloat16 --swap-space ${SWAP_SPACE} --no-enable-log-requests --enable_chunked_prefill --distributed-executor-backend mp -tp=${TP}"}
 
 cleanup() {
   echo "🧹 Cleaning up..."
@@ -12,23 +37,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
-VLLM_PARAMS=(
+VLLM_CONTAINER_PARAMS=(
   "--privileged=true"
   "--shm-size=64g"
-  "-p" "8000:8000"
-  "--cpuset-cpus=0-103"
+  "-p" "${PORT}:${PORT}"
+  "--cpuset-cpus=${CPUS}"
   "-e" "MODEL=${MODEL_PATH}"
-  "-e" "MODE=benchmark-serve"
+  "-e" "MODE=${MODE}"
   "-e" "VLLM_USE_V1=1"
   "-e" "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1"
   "-e" "VLLM_ENGINE_ITERATION_TIMEOUT_S=600"
   "-e" "VLLM_RPC_TIMEOUT=1000000"
-  "-e" "VLLM_CPU_KVCACHE_SPACE=30"
-  "-e" "VLLM_CPU_OMP_THREADS_BIND=0-25|52-77"
-  "-e" "OMP_NUM_THREADS=26"
-  "-e" "GOODPUT_PARAMS=--goodput tpot:100 --goodput ttft:1000"
-  "-e" "EXTRA_ARGS=--dtype=bfloat16 --swap-space 8 --no-enable-log-requests --enable_chunked_prefill --distributed-executor-backend mp -tp=2"
-  "-v" "/home/mtahhan/models/Llama-3.1-8B-Instruct:${MODEL_PATH}"
+  "-e" "VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE}"
+  "-e" "VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND}"
+  "-e" "OMP_NUM_THREADS=${OMP_NUM_THREADS}"
+  "-e" "GOODPUT_PARAMS=${GOODPUT_PARAMS}"
+  "-e" "EXTRA_ARGS=${EXTRA_ARGS}"
+  "-v" "${HOST_MODEL_PATH}:${MODEL_PATH}"
   "-v" "${RESULTS_ROOT}:${RESULTS_ROOT}"
 )
 
@@ -70,41 +95,6 @@ extract_metrics_from_log() {
   P99_ITL=${P99_ITL:-0}
 }
 
-# extract_results() {
-#   local LOG_DIR=$1
-#   local OUTPUT_CSV=$2
-
-#   echo "📂 Extracting results from logs in ${LOG_DIR}..."
-#   echo "input_len,output_len,num_prompts,num_concurrent,tokens_per_sec,output_tokens_per_sec,mean_ttft,mean_tpot,median_ttft,p99_ttft,median_tpot,p99_tpot,mean_itl,median_itl,p99_itl" > "$OUTPUT_CSV"
-
-#   for LOG_FILE in "${LOG_DIR}"/*.log; do
-#     [[ -f "$LOG_FILE" ]] || continue
-
-#     # Extract parameters from the log filename
-#     FILENAME=$(basename "$LOG_FILE")
-#     IFS='_' read -r _ input_len output_len num_prompts <<< "${FILENAME%.log}"
-
-#     # Extract metrics from the log file
-#     extract_metrics_from_log "$LOG_FILE"
-
-#     # Extract num_concurrent from the log file
-#     num_concurrent=$(grep "Maximum request concurrency" "$LOG_FILE" | awk '{print $NF}')
-#     num_concurrent=${num_concurrent:-N/A}
-
-#     echo "${input_len},${output_len},${num_prompts},${num_concurrent},${TOKS_PER_SEC},${OUT_TOKS_PER_SEC},${MEAN_TTFT},${MEAN_TPOT},${MEDIAN_TTFT},${P99_TTFT},${MEDIAN_TPOT},${P99_TPOT},${MEAN_ITL},${MEDIAN_ITL},${P99_ITL}" >> "$OUTPUT_CSV"
-#   done
-
-#   echo "✅ Results extracted to: ${OUTPUT_CSV}"
-# }
-
-# # Check for the extract option
-# if [[ "$1" == "--extract" ]]; then
-#   LOG_DIR=${2:-"${RESULTS_ROOT}"}
-#   OUTPUT_CSV=${3:-"${LOG_DIR}/extracted_results.csv"}
-#   extract_results "$LOG_DIR" "$OUTPUT_CSV"
-#   exit 0
-# fi
-
 # ---------- RUN SWEEP ----------
 total_runs=$(( ${#INPUT_LENS[@]} * ${#OUTPUT_LENS[@]} * ${#NUM_PROMPTS_LIST[@]} ))
 run_count=0
@@ -121,7 +111,7 @@ for input_len in "${INPUT_LENS[@]}"; do
       LOG_FILE="${RESULTS_ROOT}/run_${input_len}_${output_len}_${num_prompts}.log"
 
       # ---------- RUN CONTAINER ----------
-      if ! CONTAINER_ID=$(podman run -d "${VLLM_PARAMS[@]}" \
+      if ! CONTAINER_ID=$(podman run -d "${VLLM_CONTAINER_PARAMS[@]}" \
         -e "INPUT_LEN=${input_len}" \
         -e "OUTPUT_LEN=${output_len}" \
         -e "NUM_PROMPTS=${num_prompts}" \
@@ -130,7 +120,7 @@ for input_len in "${INPUT_LENS[@]}"; do
         echo "❌ Failed to start container for input=${input_len}, output=${output_len}, prompts=${num_prompts}" | tee -a "$LOG_FILE"
         echo "${input_len},${output_len},${num_prompts},${num_concurrent},0,0,0,0,0,0,0,0,0,0,0" >> "$RESULTS_CSV"
         continue
-        fi
+      fi
 
         echo "🕒 Streaming logs for container ${CONTAINER_ID:0:12}..."
 

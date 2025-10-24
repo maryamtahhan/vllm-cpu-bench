@@ -25,17 +25,16 @@ Ensure the following tools are installed:
 
 2. Build the base image and container image:
    ```bash
-   make build
+   make build-base # Will clone vLLM and build the base cpu image
+   make build      # Will build the image that can be used for simple serving or benchmarking
    ```
 
    This will:
    - Build the base image using the `scripts/build_vllm_cpu_image.sh` script.
    - Build the final container image tagged as `quay.io/mtahhan/vllm:cpu`.
 
-3. Push the image to a container registry (optional):
-   ```bash
-   make push
-   ```
+   > Note: TODO update the image name to something more generic
+
 
 ## Downloading Models from Hugging Face
 
@@ -59,7 +58,44 @@ pip install huggingface_hub
 python scripts/download_model.py meta-llama/Llama-3.1-8B-Instruct
 ```
 
-The model will be saved in /tmp/models/Llama-3.1-8B-Instruct.
+The model will be saved in /var/models/Llama-3.1-8B-Instruct.
+
+## Running the container in serving mode
+
+```bash
+podman run --rm \
+  --privileged=true \
+  --shm-size=16g \
+  -p 8000:8000 \
+  -e VLLM_CPU_KVCACHE_SPACE=40 \
+  -e MODE=serve\
+  -e EXTRA_ARGS="--dtype=bfloat16 --disable-sliding-window" \
+  -e  VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+  -e VLLM_CPU_OMP_THREADS_BIND=auto \
+  -e MODEL=/models--meta-llama--Llama-3.1-8B-Instruct \
+  -e VLLM_ENGINE_ITERATION_TIMEOUT_S=600 \
+  -e VLLM_RPC_TIMEOUT=1000000 \
+  -v /var/models/Llama-3.1-8B-Instruct:/models--meta-llama--Llama-3.1-8B-Instruct \
+  quay.io/mtahhan/vllm:cpu
+```
+
+Test the endpoint with curl:
+
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+-H "Content-Type: application/json" \
+-d '{
+  "model": "/models--meta-llama--Llama-3.1-8B-Instruct",
+  "messages": [
+    {"role": "user", "content": "Analyze the main changes for Dijkstra algorithm"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 50
+}'
+```
+
+> Note: you will need to stop the serving pod with `podman stop`
 
 ## Running Benchmarks
 
@@ -80,11 +116,11 @@ podman run --rm \
   -e VLLM_RPC_TIMEOUT=1000000 \
   -e INPUT_LEN=256 \
   -e OUTPUT_LEN=256 \
-  -v /tmp/models/Llama-3.1-8B-Instruct:/models--meta-llama--Llama-3.1-8B-Instruct \
+  -v /var/models/Llama-3.1-8B-Instruct:/models--meta-llama--Llama-3.1-8B-Instruct \
   quay.io/mtahhan/vllm:cpu
 ```
 
-### Using `bench.sh` for Automated Benchmarking
+### Using `bench.sh` for a Benchmark sweep
 
 The `bench.sh` script automates the benchmarking process by running a parameter sweep over various input lengths, output lengths, number of prompts, and concurrency levels.
 
@@ -107,10 +143,40 @@ The `bench.sh` script automates the benchmarking process by running a parameter 
 
 #### Configuration
 
-You can modify the following parameters in the script:
-- `MODEL_PATH`: Path to the model directory.
-- `RESULTS_ROOT`: Directory where benchmark results will be saved.
-- `INPUT_LENS`, `OUTPUT_LENS`, `NUM_PROMPTS_LIST`, `NUM_CONCURRENT_LIST`: Arrays defining the parameter sweep.
+The `bench.sh` script provides several configurable parameters. These can be set as environment variables before running the script or modified directly in the script:
+
+- **Base Configuration**:
+  - `MODE`: Mode of operation. Options: `benchmark-serve`, `serve`, `benchmark-throughput`, `benchmark-latency`. Default: `benchmark-serve`.
+  - `MODEL`: Model name or Path to the model directory. Default: `${MODEL_PATH}`.
+  - `PORT`: Port for the container. Default: `8000`.
+
+  > NOTE: if using the MOOEL name directly ensure you also configure `HF_TOKEN`
+    as an env var for the container.
+
+- **Benchmark Configuration**:
+  - `INPUT_LEN`: Input sequence length. Default: `256`.
+  - `OUTPUT_LEN`: Output sequence length. Default: `256`.
+  - `NUM_PROMPTS`: Number of prompts per request. Default: `1000`.
+  - `NUM_ROUNDS`: Number of benchmark rounds. Default: `3`.
+  - `MAX_BATCH_TOKENS`: Maximum tokens per batch. Default: `8192`.
+  - `NUM_CONCURRENT`: Number of concurrent requests. Default: `8`.
+  - `BENCHMARK_SUMMARY_MODE`: Format of benchmark summary. Options: `table`, `graph`, `none`. Default: `table`.
+
+- **System-Specific Parallelism Tuning**:
+  - `CPUS`: CPU cores to use. Default: `0-103`.
+  - `TP`: Tensor parallelism (number of NUMA nodes). Default: `2`.
+  - `OMP_NUM_THREADS`: Threads per shard. Default: `26`.
+  - `VLLM_CPU_OMP_THREADS_BIND`: CPU thread binding for shards. Default: `0-25|52-77`.
+  - `VLLM_CPU_KVCACHE_SPACE`: Percentage of memory allocated for KV cache. Default: `30`.
+  - `SWAP_SPACE`: Swap space in GB. Default: `8`.
+  - `GOODPUT_PARAMS`: Goodput settings. Default: `--goodput tpot:100 --goodput ttft:1000`.
+  - `EXTRA_ARGS`: Additional arguments for the container. Default: `--dtype=bfloat16 --swap-space ${SWAP_SPACE} --no-enable-log-requests --enable_chunked_prefill --distributed-executor-backend mp -tp=${TP}`.
+
+- **Sweep Parameters**:
+  - `INPUT_LENS`: Array of input sequence lengths. Default: `(256 1024)`.
+  - `OUTPUT_LENS`: Array of output sequence lengths. Default: `(256 1024 2048)`.
+  - `NUM_PROMPTS_LIST`: Array of prompt counts. Default: `(1 8 32 64 128)`.
+  - `NUM_CONCURRENT_LIST`: Array of concurrency levels. Default: `(1 8 32 64 128)`.
 
 #### Output
 
