@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install TCMalloc library
-RUN apt-get update && apt-get install -y libtcmalloc-minimal4 && \
+RUN apt-get update && apt-get install -y libtcmalloc-minimal4 psmisc && \
     find / -name *libtcmalloc* && \
     echo "export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4:\$LD_PRELOAD" >> /etc/profile
 
