@@ -29,6 +29,41 @@ PROFILE_PATH="$LOG_FOLDER/profile"
 
 mkdir -p "$LOG_FOLDER" "$PROFILE_PATH"
 
+# ===============================================================
+# Validate THREAD_BIND against visible CPUs
+# ===============================================================
+VISIBLE_CPUS=$(cat /sys/fs/cgroup/cpuset.cpus | tr -d ' \n')
+echo "Detected visible CPUs: $VISIBLE_CPUS"
+
+expand_range() {
+  local range=$1
+  if [[ "$range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+    seq "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+  else
+    echo "$range"
+  fi
+}
+
+# Flatten the visible CPUs into a simple list of numbers
+VISIBLE_LIST=()
+for seg in ${VISIBLE_CPUS//,/ }; do
+  VISIBLE_LIST+=($(expand_range "$seg"))
+done
+
+# Now check each thread binding segment
+IFS='|' read -ra SEGMENTS <<< "$THREAD_BIND"
+for seg in "${SEGMENTS[@]}"; do
+  for cpu in $(expand_range "$seg"); do
+    if ! printf '%s\n' "${VISIBLE_LIST[@]}" | grep -q -x "$cpu"; then
+      echo "❌ THREAD_BIND includes CPU $cpu, which is NOT visible in container cpuset: $VISIBLE_CPUS"
+      echo "   Please fix THREAD_BIND or container --cpuset-cpus"
+      exit 1
+    fi
+  done
+done
+echo "✅ THREAD_BIND validation passed: $THREAD_BIND"
+
+
 echo "====================== CPU AUTO TUNE ======================"
 echo "MODEL=$MODEL"
 echo "SYSTEM=$SYSTEM"
@@ -66,6 +101,9 @@ start_server() {
     local profile_dir=$5
 
     pkill -if "vllm serve" || true
+    sleep 5
+    fuser -k 8004/tcp || true
+    sleep 2
 
     export VLLM_CPU_KVCACHE_SPACE=$kv_cache_pct
     export OMP_NUM_THREADS=$OMP_NUM_THREADS
@@ -99,6 +137,13 @@ start_server() {
         fi
         sleep 5
     done
+
+    if [[ $? -ne 0 ]]; then
+        echo "Server failed to start. Last 10 lines of log:"
+        tail -n 10 "$vllm_log" || true
+        return 1
+    fi
+
     return 1
 }
 
@@ -156,6 +201,8 @@ run_benchmark() {
 
     pkill -if "vllm serve" || true
     sleep 5
+    fuser -k 8004/tcp || true
+    sleep 2
 }
 
 # ===============================================================
@@ -174,13 +221,16 @@ while (( low <= high )); do
         found_kvcache=$mid
         low=$(( mid + 2 ))
         pkill -if "vllm serve" || true
+        sleep 3
+        fuser -k 8004/tcp || true
+        sleep 2
     else
         high=$(( mid - 2 ))
     fi
 done
 
 if (( found_kvcache == 0 )); then
-    echo "❌ Could not start vLLM with KV cache ≥ 20%. Exiting."
+    echo "❌ Could not start vLLM with KV cache ≥ 5%. Exiting."
     exit 1
 fi
 echo "✅ Using VLLM_CPU_KVCACHE_SPACE=$found_kvcache%"
