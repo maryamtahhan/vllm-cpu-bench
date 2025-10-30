@@ -18,7 +18,8 @@ RUN pip3 install --no-cache-dir \
     transformers \
     accelerate \
     safetensors \
-    termplotlib
+    termplotlib \
+    datasets
 
 # Create non-root user for security
 RUN useradd -m -u 2000 vllm
@@ -41,6 +42,10 @@ COPY --chown=vllm:vllm ${ENTRYPOINT_PATH} .
 RUN if [ ! -f "entrypoint-vllm.sh" ]; then echo "Entrypoint script not found!"; exit 1; fi
 
 RUN chmod +x entrypoint-vllm.sh
+
+COPY --chown=vllm:vllm auto_tune_cpu.sh .
+
+RUN chmod +x auto_tune_cpu.sh
 
 # Set the entrypoint
 ENTRYPOINT ["./entrypoint-vllm.sh"]
