@@ -137,7 +137,7 @@ start_server() {
     # Wait for up to 5 minutes for readiness
     for i in {1..60}; do
         kill -0 "$server_pid" 2>/dev/null || return 1
-        if curl -s "http://0.0.0.0:8004/health" | grep -q "ok"; then
+        if curl -fs -o /dev/null -w "%{http_code}" "http://127.0.0.1:8004/health" | grep -q "200"; then
             echo "✅ vLLM server healthy at KV cache ${kv_cache_pct}%"
             return 0
         fi
