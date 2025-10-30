@@ -138,18 +138,16 @@ start_server() {
     for i in {1..60}; do
         kill -0 "$server_pid" 2>/dev/null || return 1
         if curl -s "http://0.0.0.0:8004/health" | grep -q "ok"; then
+            echo "✅ vLLM server healthy at KV cache ${kv_cache_pct}%"
             return 0
         fi
         sleep 5
     done
 
-    if [[ $? -ne 0 ]]; then
-        echo "Server failed to start. Last 10 lines of log:"
-        tail -n 10 "$vllm_log" || true
-        return 1
-    fi
-
+    echo "❌ Timeout waiting for vLLM health check"
+    tail -n 10 "$vllm_log" || true
     return 1
+
 }
 
 # ===============================================================
