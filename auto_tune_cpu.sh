@@ -102,7 +102,12 @@ start_server() {
 
     pkill -if "vllm serve" || true
     sleep 5
-    fuser -k 8004/tcp || true
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k 8004/tcp || true
+    else
+        echo "(fuser not found, skipping port cleanup)"
+        pkill -f "0.0.0.0:8004" >/dev/null 2>&1 || true
+    fi
     sleep 2
 
     export VLLM_CPU_KVCACHE_SPACE=$kv_cache_pct
@@ -201,7 +206,12 @@ run_benchmark() {
 
     pkill -if "vllm serve" || true
     sleep 5
-    fuser -k 8004/tcp || true
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k 8004/tcp || true
+    else
+        echo "(fuser not found, skipping port cleanup)"
+        pkill -f "0.0.0.0:8004" >/dev/null 2>&1 || true
+    fi
     sleep 2
 }
 
@@ -222,7 +232,12 @@ while (( low <= high )); do
         low=$(( mid + 2 ))
         pkill -if "vllm serve" || true
         sleep 3
-        fuser -k 8004/tcp || true
+        if command -v fuser >/dev/null 2>&1; then
+            fuser -k 8004/tcp || true
+        else
+            echo "(fuser not found, skipping port cleanup)"
+            pkill -f "0.0.0.0:8004" >/dev/null 2>&1 || true
+        fi
         sleep 2
     else
         high=$(( mid - 2 ))
