@@ -5,11 +5,13 @@ to a local directory for offline or vLLM use.
 
 Usage:
     python download_model.py meta-llama/Llama-3.1-8B-Instruct
+    python download_model.py meta-llama/Llama-3.1-8B-Instruct --local-dir /custom/path
 """
 
 import os
 import sys
 import platform
+import argparse
 from huggingface_hub import snapshot_download
 
 # Ensure Python version is 3.8+
@@ -18,17 +20,26 @@ if tuple(map(int, platform.python_version_tuple())) < (3, 8):
     sys.exit(1)
 
 def main():
-    if len(sys.argv) < 2:
-        print("❌ Usage: python download_model.py <repo_id>")
-        print("Example: python download_model.py meta-llama/Llama-3.1-8B-Instruct")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Download a Hugging Face model to a local directory",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "repo_id",
+        help="Hugging Face model repository ID (e.g., meta-llama/Llama-3.1-8B-Instruct)"
+    )
+    parser.add_argument(
+        "--local-dir",
+        help="Local directory to save the model (default: /var/models/<model_name>)",
+        default=None
+    )
 
-    # Get model repo ID from CLI argument
-    model_id = sys.argv[1].strip()
+    args = parser.parse_args()
+    model_id = args.repo_id.strip()
 
-    # Local directory is based on the last part of the repo_id
+    # Local directory is based on the last part of the repo_id if not specified
     model_name = model_id.split("/")[-1]
-    local_dir = os.path.join("/var/models", model_name)
+    local_dir = args.local_dir if args.local_dir else os.path.join("/var/models", model_name)
 
     # Optional: read token from environment (if gated/private)
     hf_token = os.getenv("HF_TOKEN", None)
