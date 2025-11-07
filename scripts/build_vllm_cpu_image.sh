@@ -14,12 +14,6 @@ detect_container_tool() {
     fi
 }
 
-# Check for sudo permissions
-if ! sudo -v; then
-    echo "Error: This script requires sudo permissions." | tee -a "$LOG_FILE" >&2
-    exit 1
-fi
-
 # Clone the vLLM repository
 if [ ! -d "vllm_source" ]; then
     echo "Cloning the vLLM repository..." | tee -a "$LOG_FILE"
@@ -37,7 +31,7 @@ echo "Using $CONTAINER_TOOL to build the image..." | tee -a "$LOG_FILE"
 echo "Build started at: $(date)" | tee -a "$LOG_FILE"
 
 # Build the CPU image
-sudo $CONTAINER_TOOL build -f docker/Dockerfile.cpu \
+$CONTAINER_TOOL build -f docker/Dockerfile.cpu \
     --build-arg VLLM_CPU_AVX512BF16=false \
     --build-arg VLLM_CPU_AVX512VNNI=false \
     --build-arg VLLM_CPU_DISABLE_AVX512=false \
@@ -45,3 +39,11 @@ sudo $CONTAINER_TOOL build -f docker/Dockerfile.cpu \
     --target vllm-openai . 2>>"$LOG_FILE" | tee -a "$LOG_FILE"
 
 echo "Build completed at: $(date)" | tee -a "$LOG_FILE"
+
+# Manually tag the last built image if the tag was dropped
+LATEST_ID=$($CONTAINER_TOOL images -q --filter dangling=true | head -n 1)
+if [ -n "$LATEST_ID" ]; then
+    echo "Tagging intermediate image $LATEST_ID as localhost/vllm-cpu-env:latest" | tee -a "$LOG_FILE"
+    $CONTAINER_TOOL tag "$LATEST_ID" localhost/vllm-cpu-env:latest
+fi
+

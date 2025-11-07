@@ -7,6 +7,7 @@
 
 TAG=$(date +"%Y_%m_%d_%H_%M")
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}
 BASE=${BASE:-"$SCRIPT_DIR/../../.."}
 MODEL=${MODEL:-"/models--meta-llama--Llama-3.1-8B-Instruct"}
 SYSTEM=${SYSTEM:-"CPU"}
@@ -27,7 +28,18 @@ LOG_FOLDER="$BASE/auto-benchmark/$TAG"
 RESULT="$LOG_FOLDER/result.txt"
 PROFILE_PATH="$LOG_FOLDER/profile"
 
+# Clean and create directories
+rm -rf "$LOG_FOLDER"
+rm -rf "$PROFILE_PATH"
 mkdir -p "$LOG_FOLDER" "$PROFILE_PATH"
+
+# Record git hash for reproducibility
+cd "$BASE/vllm" 2>/dev/null && {
+    current_hash=$(git rev-parse HEAD)
+    echo "hash:$current_hash" >> "$RESULT"
+    echo "current_hash: $current_hash"
+    cd - > /dev/null
+} || echo "Not in git repo, skipping hash"
 
 # ===============================================================
 # Validate THREAD_BIND against visible CPUs
@@ -64,22 +76,29 @@ done
 echo "✅ THREAD_BIND validation passed: $THREAD_BIND"
 
 
-echo "====================== CPU AUTO TUNE ======================"
+echo "====================== CPU AUTO TUNE PARAMETERS ======================"
+echo "SCRIPT_DIR=$SCRIPT_DIR"
+echo "BASE=$BASE"
 echo "MODEL=$MODEL"
 echo "SYSTEM=$SYSTEM"
 echo "TP=$TP"
 echo "INPUT_LEN=$INPUT_LEN"
 echo "OUTPUT_LEN=$OUTPUT_LEN"
 echo "MAX_MODEL_LEN=$MAX_MODEL_LEN"
+echo "MIN_CACHE_HIT_PCT=$MIN_CACHE_HIT_PCT"
 echo "MAX_LATENCY_ALLOWED_MS=$MAX_LATENCY_ALLOWED_MS"
+echo "NUM_SEQS_LIST=$NUM_SEQS_LIST"
+echo "NUM_BATCHED_TOKENS_LIST=$NUM_BATCHED_TOKENS_LIST"
+echo "VLLM_LOGGING_LEVEL=$VLLM_LOGGING_LEVEL"
 echo "OMP_NUM_THREADS=$OMP_NUM_THREADS"
 echo "THREAD_BIND=$THREAD_BIND"
 echo "RESULT_FILE=$RESULT"
-echo "============================================================"
+echo "======================================================================="
 
 TOTAL_LEN=$((INPUT_LEN + OUTPUT_LEN))
+RED='\033[0;31m'
 if (( TOTAL_LEN > MAX_MODEL_LEN )); then
-    echo "FAILED: INPUT_LEN($INPUT_LEN)+OUTPUT_LEN($OUTPUT_LEN)=$TOTAL_LEN > MAX_MODEL_LEN($MAX_MODEL_LEN)"
+    echo -e "${RED}FAILED: INPUT_LEN($INPUT_LEN) + OUTPUT_LEN($OUTPUT_LEN) = $TOTAL_LEN, which is > MAX_MODEL_LEN = $MAX_MODEL_LEN.\033[0m" >&2
     exit 1
 fi
 
@@ -157,53 +176,105 @@ run_benchmark() {
     local kv_cache_pct=$1
     local max_num_seqs=$2
     local max_num_batched_tokens=$3
+    echo "max_num_seq: $max_num_seqs, max_num_batched_tokens: $max_num_batched_tokens"
     local vllm_log="$LOG_FOLDER/vllm_${kv_cache_pct}_${max_num_seqs}_${max_num_batched_tokens}.log"
-    local bm_log="$LOG_FOLDER/bm_${kv_cache_pct}_${max_num_seqs}_${max_num_batched_tokens}.log"
+    echo "vllm_log: $vllm_log"
+    echo
 
     start_server "$kv_cache_pct" "$max_num_seqs" "$max_num_batched_tokens" "$vllm_log" ""
     if [[ $? -ne 0 ]]; then
-        echo "Server failed for KV=$kv_cache_pct%" | tee -a "$RESULT"
+        echo "Server failed for KV=$kv_cache_pct%, seqs=$max_num_seqs, tokens=$max_num_batched_tokens" | tee -a "$RESULT"
         return 1
     fi
+    echo "server started."
+    echo
 
     prefix_len=$(( INPUT_LEN * MIN_CACHE_HIT_PCT / 100 ))
     adjusted_input_len=$(( INPUT_LEN - prefix_len ))
 
+    echo "run benchmark test..."
+    meet_latency_requirement=0
+    # Get a basic qps by using request-rate inf
+    bm_log="$LOG_FOLDER/bm_${kv_cache_pct}_${max_num_seqs}_${max_num_batched_tokens}_requestrate_inf.txt"
     vllm bench serve \
         --backend vllm \
         --model $MODEL \
         --dataset-name random \
         --random-input-len $adjusted_input_len \
         --random-output-len $OUTPUT_LEN \
+        --random-prefix-len $prefix_len \
         --ignore-eos \
         --disable-tqdm \
         --request-rate inf \
-        --num-prompts 500 \
+        --percentile-metrics ttft,tpot,itl,e2el \
         --goodput e2el:$MAX_LATENCY_ALLOWED_MS \
+        --num-prompts 1000 \
         --port 8004 &> "$bm_log"
 
-    throughput=$(grep "Request throughput" "$bm_log" | awk '{print $NF}')
-    e2el=$(grep "P99 E2EL" "$bm_log" | awk '{print $NF}')
-    goodput=$(grep "Request goodput" "$bm_log" | awk '{print $NF}')
-
-    throughput=${throughput:-0}
-    e2el=${e2el:-999999}
-    goodput=${goodput:-0}
-
-    echo "KV=$kv_cache_pct%, seqs=$max_num_seqs, tokens=$max_num_batched_tokens, throughput=$throughput, goodput=$goodput, e2el=$e2el" | tee -a "$RESULT"
+    throughput=$(grep "Request throughput (req/s):" "$bm_log" | sed 's/[^0-9.]//g')
+    e2el=$(grep "P99 E2EL (ms):" "$bm_log" | awk '{print $NF}')
+    goodput=$(grep "Request goodput (req/s):" "$bm_log" | sed 's/[^0-9.]//g')
 
     if (( $(echo "$e2el <= $MAX_LATENCY_ALLOWED_MS" | bc -l) )); then
+        meet_latency_requirement=1
+        request_rate=inf
+    fi
+
+    # If latency requirement not met at infinite rate, iterate to find optimal rate
+    if (( ! meet_latency_requirement )); then
+        # Start from request-rate as int(throughput) + 1
+        request_rate=$((${throughput%.*} + 1))
+        while ((request_rate > 0)); do
+            # Clear prefix cache
+            curl -X POST http://127.0.0.1:8004/reset_prefix_cache
+            sleep 5
+            bm_log="$LOG_FOLDER/bm_${kv_cache_pct}_${max_num_seqs}_${max_num_batched_tokens}_requestrate_${request_rate}.txt"
+            vllm bench serve \
+                --backend vllm \
+                --model $MODEL \
+                --dataset-name random \
+                --random-input-len $adjusted_input_len \
+                --random-output-len $OUTPUT_LEN \
+                --random-prefix-len $prefix_len \
+                --ignore-eos \
+                --disable-tqdm \
+                --request-rate $request_rate \
+                --percentile-metrics ttft,tpot,itl,e2el \
+                --goodput e2el:$MAX_LATENCY_ALLOWED_MS \
+                --num-prompts 100 \
+                --port 8004 &> "$bm_log"
+            throughput=$(grep "Request throughput (req/s):" "$bm_log" | sed 's/[^0-9.]//g')
+            e2el=$(grep "P99 E2EL (ms):" "$bm_log" | awk '{print $NF}')
+            goodput=$(grep "Request goodput (req/s):" "$bm_log" | sed 's/[^0-9.]//g')
+            if (( $(echo "$e2el <= $MAX_LATENCY_ALLOWED_MS" | bc -l) )); then
+                meet_latency_requirement=1
+                break
+            fi
+            request_rate=$((request_rate-1))
+        done
+    fi
+
+    # Write the results and update the best result
+    if ((meet_latency_requirement)); then
+        echo "KV=$kv_cache_pct%, seqs=$max_num_seqs, tokens=$max_num_batched_tokens, request_rate=$request_rate, e2el=$e2el, throughput=$throughput, goodput=$goodput"
+        echo "KV=$kv_cache_pct%, seqs=$max_num_seqs, tokens=$max_num_batched_tokens, request_rate=$request_rate, e2el=$e2el, throughput=$throughput, goodput=$goodput" >> "$RESULT"
         if (( $(echo "$throughput > $best_throughput" | bc -l) )); then
             best_throughput=$throughput
             best_goodput=$goodput
+            best_request_rate=$request_rate
             best_kvcache_space=$kv_cache_pct
             best_max_num_seqs=$max_num_seqs
             best_num_batched_tokens=$max_num_batched_tokens
         fi
+    else
+        echo "KV=$kv_cache_pct%, seqs=$max_num_seqs, tokens=$max_num_batched_tokens does not meet latency requirement ${MAX_LATENCY_ALLOWED_MS}"
+        echo "KV=$kv_cache_pct%, seqs=$max_num_seqs, tokens=$max_num_batched_tokens does not meet latency requirement ${MAX_LATENCY_ALLOWED_MS}" >> "$RESULT"
     fi
 
+    echo "best_max_num_seqs: $best_max_num_seqs, best_num_batched_tokens: $best_num_batched_tokens, best_throughput: $best_throughput"
+
     pkill -if "vllm serve" || true
-    sleep 5
+    sleep 10
     if command -v fuser >/dev/null 2>&1; then
         fuser -k 8004/tcp || true
     else
@@ -211,6 +282,8 @@ run_benchmark() {
         pkill -f "0.0.0.0:8004" >/dev/null 2>&1 || true
     fi
     sleep 2
+    echo "===================="
+    return 0
 }
 
 # ===============================================================
@@ -258,36 +331,46 @@ for num_seqs in $NUM_SEQS_LIST; do
     done
 done
 
-echo "Tuning complete."
-echo "Best: KV=$best_kvcache_space%, seqs=$best_max_num_seqs, tokens=$best_num_batched_tokens, throughput=$best_throughput" | tee -a "$RESULT"
+echo "finish permutations"
 
 # ===============================================================
 # STEP 3: Profile best configuration
 # ===============================================================
 if (( $(echo "$best_throughput > 0" | bc -l) )); then
-    echo "Profiling best configuration..."
-    start_server "$best_kvcache_space" "$best_max_num_seqs" "$best_num_batched_tokens" "$LOG_FOLDER/vllm_best_profile.log" "$PROFILE_PATH"
+    echo
+    echo "Benchmark tuning finished. Now running profiling on the best configuration found..."
+    echo "Best config: KV=$best_kvcache_space%, seqs=$best_max_num_seqs, tokens=$best_num_batched_tokens, throughput=$best_throughput"
+    echo
+
+    vllm_log="$LOG_FOLDER/vllm_log_BEST_PROFILE.txt"
+    bm_log="$LOG_FOLDER/bm_log_BEST_PROFILE.txt"
+
+    # Start server with the best params and profiling ENABLED
+    echo "Starting server for profiling..."
+    start_server "$best_kvcache_space" "$best_max_num_seqs" "$best_num_batched_tokens" "$vllm_log" "$PROFILE_PATH"
+
+    # Run benchmark with the best params and the --profile flag
+    echo "Running benchmark with profiling..."
+    prefix_len=$(( INPUT_LEN * MIN_CACHE_HIT_PCT / 100 ))
+    adjusted_input_len=$(( INPUT_LEN - prefix_len ))
     vllm bench serve \
         --backend vllm \
         --model $MODEL \
         --dataset-name random \
-        --random-input-len $INPUT_LEN \
+        --random-input-len $adjusted_input_len \
         --random-output-len $OUTPUT_LEN \
+        --random-prefix-len $prefix_len \
         --ignore-eos \
         --disable-tqdm \
+        --request-rate $best_request_rate \
+        --percentile-metrics ttft,tpot,itl,e2el \
+        --goodput e2el:$MAX_LATENCY_ALLOWED_MS \
         --num-prompts 100 \
         --port 8004 \
-        --profile &> "$LOG_FOLDER/bm_best_profile.log"
-    pkill -if "vllm serve" || true
+        --profile &> "$bm_log"
 else
-    echo "No valid config met latency constraints."
+    echo "No configuration met the latency requirements. Skipping final profiling run."
 fi
-
-echo ""
-echo "================= FINAL RESULTS ================="
-echo "Best KV cache: $best_kvcache_space%"
-echo "Best seqs: $best_max_num_seqs"
-echo "Best batched tokens: $best_num_batched_tokens"
-echo "Best throughput: $best_throughput"
-echo "Results in: $RESULT"
-echo "Profile in: $PROFILE_PATH"
+pkill -if "vllm serve" || true
+echo "best_max_num_seqs: $best_max_num_seqs, best_num_batched_tokens: $best_num_batched_tokens, best_throughput: $best_throughput, profile saved in: $PROFILE_PATH"
+echo "best_max_num_seqs: $best_max_num_seqs, best_num_batched_tokens: $best_num_batched_tokens, best_throughput: $best_throughput, profile saved in: $PROFILE_PATH" >> "$RESULT"
