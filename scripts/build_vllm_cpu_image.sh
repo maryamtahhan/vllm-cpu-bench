@@ -28,6 +28,18 @@ cd vllm_source || { echo "Error: Failed to change directory to vllm_source." | t
 CONTAINER_TOOL=$(detect_container_tool)
 echo "Using $CONTAINER_TOOL to build the image..." | tee -a "$LOG_FILE"
 
+# Apply podman-build.patch if using podman
+if [ "$CONTAINER_TOOL" = "podman" ]; then
+    if [ -f "../podman-build.patch" ]; then
+        echo "Applying podman-build.patch for Podman compatibility..." | tee -a "$LOG_FILE"
+        git apply ../podman-build.patch 2>>"$LOG_FILE" || {
+            echo "Warning: Failed to apply podman-build.patch. It may already be applied." | tee -a "$LOG_FILE"
+        }
+    else
+        echo "Warning: podman-build.patch not found at ../podman-build.patch" | tee -a "$LOG_FILE"
+    fi
+fi
+
 echo "Build started at: $(date)" | tee -a "$LOG_FILE"
 
 # Build the CPU image
