@@ -35,6 +35,16 @@ build: build-base
 	@echo "Using $(CONTAINER_TOOL) to build the container image..."
 	@$(CONTAINER_TOOL) build --build-arg ENTRYPOINT_PATH=image -t $(IMAGE) -f $(IMAGE_DIR)/$(DOCKERFILE) .
 
+# Build the container image
+build-cpu-skip-base:
+	@echo "Using $(CONTAINER_TOOL) to build the container image..."
+	@$(CONTAINER_TOOL) build --build-arg BASE_IMAGE=quay.io/mtahhan/vllm:cpu-base --build-arg ENTRYPOINT_PATH=image -t $(IMAGE) -f $(IMAGE_DIR)/$(DOCKERFILE) .
+
+# Build the container image
+build-avx-skip-base:
+	@echo "Using $(CONTAINER_TOOL) to build the container image..."
+	@$(CONTAINER_TOOL) build --build-arg BASE_IMAGE=quay.io/mtahhan/vllm:cpu-base-avx --build-arg ENTRYPOINT_PATH=image -t $(IMAGE_NAME):cpu-avx -f $(IMAGE_DIR)/$(DOCKERFILE) .
+
 # Push the image to the registry
 push:
 	@echo "Using $(CONTAINER_TOOL) to push the container image..."
