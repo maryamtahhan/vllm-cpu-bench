@@ -13,6 +13,8 @@ NUM_ROUNDS=${NUM_ROUNDS:-3}
 MAX_BATCH_TOKENS=${MAX_BATCH_TOKENS:-8192}
 NUM_CONCURRENT=${NUM_CONCURRENT:-8}
 BENCHMARK_SUMMARY_MODE=${BENCHMARK_SUMMARY_MODE:-"table"}  # Options: table, graph, none
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BENCHMARK_DIR=${BENCHMARK_DIR:-"/data/benchmarks/serve_$TIMESTAMP"}
 
 # Additional args passed directly to vLLM
 EXTRA_ARGS=${EXTRA_ARGS:-""}
@@ -20,7 +22,7 @@ EXTRA_ARGS=${EXTRA_ARGS:-""}
 # Log file location
 LOG_PATH="/tmp/vllm.log"
 
-# System-specific parallelism tuning (Sapphire Rapids dual-socket, 104 physical cores total)
+## System-specific parallelism tuning (Sapphire Rapids dual-socket, 104 physical cores total)
 TP=${TP:-2}  # tensor parallelism = number of NUMA nodes
 OMP_NUM_THREADS=${OMP_NUM_THREADS:-26}  # threads per shard (52 physical cores / 2)
 VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-"0-25|52-77"}  # one shard per NUMA node
@@ -234,8 +236,6 @@ case $MODE in
     echo "Additional arguments: $EXTRA_ARGS"
 
     # Create timestamped directory for this benchmark run
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    BENCHMARK_DIR="/data/benchmarks/throughput_$TIMESTAMP"
     mkdir -p "$BENCHMARK_DIR"
     THROUGHPUT_LOG="$BENCHMARK_DIR/throughput.log"
 
@@ -280,8 +280,6 @@ case $MODE in
     echo "Additional arguments: $EXTRA_ARGS"
 
     # Create timestamped directory for this benchmark run
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    BENCHMARK_DIR="/data/benchmarks/latency_$TIMESTAMP"
     mkdir -p "$BENCHMARK_DIR"
     LATENCY_LOG="$BENCHMARK_DIR/latency.log"
 
@@ -324,8 +322,6 @@ case $MODE in
     echo "Starting vLLM server + running online serve benchmark with model: $MODEL"
     echo "Additional arguments: $EXTRA_ARGS"
 
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    BENCHMARK_DIR="/data/benchmarks/serve_$TIMESTAMP"
     mkdir -p "$BENCHMARK_DIR"
     SERVE_LOG="$BENCHMARK_DIR/server.log"
     BENCH_LOG="$BENCHMARK_DIR/serve_benchmark.log"
