@@ -25,10 +25,13 @@ LOG_PATH="/tmp/vllm.log"
 ## System-specific parallelism tuning (Sapphire Rapids dual-socket, 104 physical cores total)
 TP=${TP:-2}  # tensor parallelism = number of NUMA nodes
 OMP_NUM_THREADS=${OMP_NUM_THREADS:-26}  # threads per shard (52 physical cores / 2)
-VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-"0-25|52-77"}  # one shard per NUMA node
+VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-"nobind"} # one shard per NUMA node
+CPU_AFFINITY_MASK=${CPU_AFFINITY_MASK:-"0-25,52-77"} # one shard per NUMA node
 VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-30}  # % of memory for KV cache
 SWAP_SPACE=${SWAP_SPACE:-8}  # safe small swap-space to avoid overcommit
 GOODPUT_PARAMS=${GOODPUT_PARAMS:-"--goodput tpot:100 --goodput ttft:1000"}  # adjustable goodput settings
+
+export VLLM_CPU_OMP_THREADS_BIND OMP_NUM_THREADS VLLM_CPU_KVCACHE_SPACE
 
 # Validate required environment variables
 if [[ -z "$MODEL" ]]; then
@@ -241,7 +244,7 @@ case $MODE in
 
     echo "Running throughput benchmark..."
     START_TIME=$(date +%s)
-    vllm bench throughput \
+    taskset --cpu-list "$CPU_AFFINITY_MASK" vllm bench throughput \
       --model "$MODEL" \
       --input-len "$INPUT_LEN" \
       --output-len "$OUTPUT_LEN" \
