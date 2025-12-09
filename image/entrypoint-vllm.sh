@@ -228,7 +228,7 @@ case $MODE in
     ) &
 
     # Start vLLM and tee everything to the log file
-     vllm serve \
+     taskset --cpu-list "$CPU_AFFINITY_MASK" vllm serve \
       --model "$MODEL" \
       --port "$PORT" \
       $EXTRA_ARGS > "$LOG_PATH" 2>&1
@@ -288,7 +288,7 @@ case $MODE in
 
     echo "Running latency benchmark..."
     START_TIME=$(date +%s)
-    vllm bench latency \
+    taskset --cpu-list "$CPU_AFFINITY_MASK" vllm bench latency \
       --model "$MODEL" \
       --input-len "$INPUT_LEN" \
       --output-len "$OUTPUT_LEN" \
@@ -331,7 +331,7 @@ case $MODE in
 
     # Launch the vLLM server
     echo "Launching vLLM server on port $PORT..."
-    vllm serve \
+    taskset --cpu-list "$CPU_AFFINITY_MASK" vllm serve \
       --model "$MODEL" \
       --port "$PORT" \
       $EXTRA_ARGS 2>&1 | tee "$SERVE_LOG" &
@@ -344,7 +344,7 @@ case $MODE in
     # Run the benchmark
     echo "Running serve benchmark..."
     START_TIME=$(date +%s)
-    vllm bench serve \
+    taskset --cpu-list "$CPU_AFFINITY_MASK" vllm bench serve \
       --backend vllm \
       --model "$MODEL" \
       --tokenizer "$MODEL" \
