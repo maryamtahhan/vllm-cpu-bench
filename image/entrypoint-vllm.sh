@@ -12,6 +12,7 @@ NUM_PROMPTS=${NUM_PROMPTS:-1000}
 NUM_ROUNDS=${NUM_ROUNDS:-3}
 MAX_BATCH_TOKENS=${MAX_BATCH_TOKENS:-8192}
 NUM_CONCURRENT=${NUM_CONCURRENT:-8}
+REQUEST_RATE=${REQUEST_RATE:-"inf"}
 BENCHMARK_SUMMARY_MODE=${BENCHMARK_SUMMARY_MODE:-"table"}  # Options: table, graph, none
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BENCHMARK_DIR=${BENCHMARK_DIR:-"/data/benchmarks/serve_$TIMESTAMP"}
@@ -374,9 +375,64 @@ case $MODE in
     echo "==================================="
 
     ;;
+
+  "benchmark-embeddings")
+    echo "Running vLLM embeddings benchmark with model: $MODEL"
+    echo "Additional arguments: $EXTRA_ARGS"
+
+    mkdir -p "$BENCHMARK_DIR"
+    BENCH_LOG="$BENCHMARK_DIR/embeddings_benchmark.log"
+
+    # Run the embeddings benchmark
+    echo "Running embeddings benchmark..."
+    echo "Request rate: $REQUEST_RATE"
+    echo "Max concurrency: $NUM_CONCURRENT"
+    START_TIME=$(date +%s)
+
+    # Generate result filename based on test parameters
+    RESULT_FILENAME="${RESULT_FILENAME:-${MODEL##*/}}"
+    if [[ "$REQUEST_RATE" != "inf" ]]; then
+      RESULT_FILENAME="${RESULT_FILENAME}-rate${REQUEST_RATE}"
+    fi
+    if [[ -n "$NUM_CONCURRENT" && "$NUM_CONCURRENT" != "8" ]]; then
+      RESULT_FILENAME="${RESULT_FILENAME}-concurrent${NUM_CONCURRENT}"
+    fi
+    RESULT_FILENAME="${RESULT_FILENAME}.json"
+
+    echo "Result filename: $RESULT_FILENAME"
+
+    # Build the command with conditional max-concurrency
+    BENCH_CMD="vllm bench serve \
+      --backend openai-embeddings \
+      --model \"$MODEL\" \
+      --dataset-name random \
+      --random-input-len 512 \
+      --num-prompts \"$NUM_PROMPTS\" \
+      --request-rate \"$REQUEST_RATE\" \
+      --endpoint /v1/embeddings \
+      --result-dir \"$BENCHMARK_DIR\" \
+      --result-filename \"$RESULT_FILENAME\" \
+      --save-result"
+
+    # Add max-concurrency if NUM_CONCURRENT is set and not default
+    if [[ -n "$NUM_CONCURRENT" && "$NUM_CONCURRENT" != "8" ]]; then
+      BENCH_CMD="$BENCH_CMD --max-concurrency \"$NUM_CONCURRENT\""
+    fi
+
+    eval "$BENCH_CMD" 2>&1 | tee "$BENCH_LOG"
+
+    END_TIME=$(date +%s)
+    TOTAL_TIME=$((END_TIME - START_TIME))
+
+    echo -e "\n===== Total Benchmark Runtime ====="
+    echo " Total time: ${TOTAL_TIME} seconds"
+    echo " Results saved in: $BENCHMARK_DIR"
+    echo "==================================="
+
+    ;;
   *)
     echo "Error: Unknown mode: $MODE"
-    echo "Supported modes: serve, benchmark-throughput, benchmark-latency, benchmark-serve"
+    echo "Supported modes: serve, benchmark-throughput, benchmark-latency, benchmark-serve, benchmark-embeddings"
     exit 1
     ;;
 esac
