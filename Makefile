@@ -4,7 +4,7 @@ IMAGE_NAME ?= quay.io/mtahhan/vllm
 IMAGE_TAG ?= cpu
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 DOCKERFILE = Containerfile.cpu
-
+BASE_IMAGE ?= quay.io/mtahhan/vllm:cpu-base
 # Determine whether to use podman or docker
 CONTAINER_TOOL = $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
@@ -38,7 +38,7 @@ build: build-base
 # Build the container image
 build-cpu-skip-base:
 	@echo "Using $(CONTAINER_TOOL) to build the container image..."
-	@$(CONTAINER_TOOL) build --build-arg BASE_IMAGE=quay.io/mtahhan/vllm:cpu-base --build-arg ENTRYPOINT_PATH=image -t $(IMAGE) -f $(IMAGE_DIR)/$(DOCKERFILE) .
+	@$(CONTAINER_TOOL) build --build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ENTRYPOINT_PATH=image -t $(IMAGE) -f $(IMAGE_DIR)/$(DOCKERFILE) .
 
 # Build the container image
 build-avx-skip-base:
